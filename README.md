@@ -1,4 +1,4 @@
-# Gesture Meme Detector
+# Meowmeow cat cam meme detector
 
 Point your webcam at yourself, make a face/hand gesture, get a cat meme back in real time. Runs either as a desktop app (OpenCV windows) or entirely in the browser (MediaPipe WASM, no install).
 
