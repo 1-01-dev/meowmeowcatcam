@@ -12,7 +12,7 @@ Checked in this order — when a pose could match more than one, the earlier one
 
 | # | Gesture | How to trigger |
 |---|---|---|
-| 1 | Muehehe) | Both hands up, index fingers only, tips touching |
+| 1 | Muehehe | Both hands up, index fingers only, tips touching |
 | 2 | Devo cat | Both hands up, above the top of your head |
 | 3 | Crash out kitty | Both hands up beside your face, not above your head |
 | 4 | I will punch you | One hand, all four fingers curled |
