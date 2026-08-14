@@ -16,13 +16,15 @@ Checked in this order — when a pose could match more than one, the earlier one
 | 2 | Devo cat | Both hands up, above the top of your head |
 | 3 | Crash out kitty | Both hands up beside your face, not above your head |
 | 4 | I will punch you | One hand, all four fingers curled |
-| 5 | Rockstar | Thumb + pinky out, shaka style |
-| 6 | Shhh | Index finger only, tip resting on your mouth |
+| 5 | EHHEHEEEHEEEE | Thumb + pinky out, rockstar cat |
+| 6 | Shhh silenced cat | Index finger only, tip resting on your mouth |
 | 7 | Nerd cat | Index finger only, held away from your face |
 | 8 | Hand Covering Face | Any hand shape sitting where your face just was |
 | 9 | gGIMME MONIE!! | One open palm, all fingers extended, away from your face |
-| 10 | Judgy cat | No hands needed — turn your head 15°+ either way (real head-pose yaw) |
+| 10 | Judgy cat | Turn your head 15°+ either way (real head-pose yaw) |
 | 11 | Pokercat | Default |
+| 12 | Spinny OIIAI cat | You spin |
+
 
 Meme images live in `memes/`. A couple of gestures pick randomly between multiple images.
 
