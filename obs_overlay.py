@@ -4,7 +4,8 @@ Runs the same MediaPipe gesture detector without showing a camera/debug window.
 Only the active cat reaction is rendered into a transparent, borderless window.
 When no gesture is active, the window is fully transparent.
 
-OBS: add a Window Capture source and select "MeowMeowCatCam OBS Overlay".
+OBS: add a Window Capture source, select "MeowMeowCatCam OBS Overlay",
+and enable "Allow Transparency".
 Press Q or Esc to stop the overlay.
 """
 
@@ -12,15 +13,12 @@ import ctypes
 import ctypes.wintypes as wt
 import random
 import time
-from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image
 
 import gesture_meme as app
 
-# Reuse the same stability and idle timing as the desktop version.
 STABLE_FRAMES_REQUIRED = 5
 HIDE_DELAY_MS = 600
 WINDOW_W = 900
@@ -29,6 +27,7 @@ FPS = 30
 
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
+gdi32 = ctypes.windll.gdi32
 
 WS_POPUP = 0x80000000
 WS_EX_LAYERED = 0x00080000
@@ -43,6 +42,7 @@ SW_SHOWNOACTIVATE = 4
 WM_DESTROY = 0x0002
 WM_KEYDOWN = 0x0100
 VK_ESCAPE = 0x1B
+PM_REMOVE = 0x0001
 
 class POINT(ctypes.Structure):
     _fields_ = [("x", wt.LONG), ("y", wt.LONG)]
@@ -52,6 +52,12 @@ class SIZE(ctypes.Structure):
 
 class BLENDFUNCTION(ctypes.Structure):
     _fields_ = [("BlendOp", wt.BYTE), ("BlendFlags", wt.BYTE), ("SourceConstantAlpha", wt.BYTE), ("AlphaFormat", wt.BYTE)]
+
+class MSG(ctypes.Structure):
+    _fields_ = [
+        ("hwnd", wt.HWND), ("message", wt.UINT), ("wParam", wt.WPARAM),
+        ("lParam", wt.LPARAM), ("time", wt.DWORD), ("pt", POINT),
+    ]
 
 WNDPROC = ctypes.WINFUNCTYPE(wt.LRESULT, wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM)
 
@@ -70,9 +76,6 @@ class BITMAPINFOHEADER(ctypes.Structure):
         ("biSizeImage", wt.DWORD), ("biXPelsPerMeter", wt.LONG), ("biYPelsPerMeter", wt.LONG),
         ("biClrUsed", wt.DWORD), ("biClrImportant", wt.DWORD),
     ]
-
-class BITMAPINFO(ctypes.Structure):
-    _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", wt.DWORD * 3)]
 
 
 def _wnd_proc(hwnd, msg, wparam, lparam):
@@ -108,26 +111,30 @@ class TransparentWindow:
 
     def draw(self, rgba):
         rgba = np.ascontiguousarray(rgba, dtype=np.uint8)
-        # Windows layered windows expect premultiplied BGRA.
         bgra = rgba[..., [2, 1, 0, 3]].copy()
         alpha = bgra[..., 3:4].astype(np.uint16)
         bgra[..., :3] = (bgra[..., :3].astype(np.uint16) * alpha // 255).astype(np.uint8)
 
         hdc_screen = user32.GetDC(None)
-        hdc_mem = ctypes.windll.gdi32.CreateCompatibleDC(hdc_screen)
-        bmi = BITMAPINFO()
-        bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
-        bmi.bmiHeader.biWidth = self.width
-        bmi.bmiHeader.biHeight = -self.height
-        bmi.bmiHeader.biPlanes = 1
-        bmi.bmiHeader.biBitCount = 32
-        bmi.bmiHeader.biCompression = BI_RGB
+        hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
+        bmi = BITMAPINFOHEADER()
+        bmi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        bmi.biWidth = self.width
+        bmi.biHeight = -self.height
+        bmi.biPlanes = 1
+        bmi.biBitCount = 32
+        bmi.biCompression = BI_RGB
         bits = ctypes.c_void_p()
-        hbitmap = ctypes.windll.gdi32.CreateDIBSection(
+        hbitmap = gdi32.CreateDIBSection(
             hdc_mem, ctypes.byref(bmi), DIB_RGB_COLORS, ctypes.byref(bits), None, 0
         )
-        ctypes.memmove(bits, bgra.ctypes.data, bgra.nbytes)
-        old = ctypes.windll.gdi32.SelectObject(hdc_mem, hbitmap)
+        if not hbitmap or not bits.value:
+            gdi32.DeleteDC(hdc_mem)
+            user32.ReleaseDC(None, hdc_screen)
+            raise RuntimeError("Could not create transparent overlay bitmap")
+
+        ctypes.memmove(bits.value, bgra.ctypes.data, bgra.nbytes)
+        old = gdi32.SelectObject(hdc_mem, hbitmap)
 
         pt_src = POINT(0, 0)
         pt_pos = POINT(0, 0)
@@ -138,9 +145,9 @@ class TransparentWindow:
             hdc_mem, ctypes.byref(pt_src), 0, ctypes.byref(blend), ULW_ALPHA
         )
 
-        ctypes.windll.gdi32.SelectObject(hdc_mem, old)
-        ctypes.windll.gdi32.DeleteObject(hbitmap)
-        ctypes.windll.gdi32.DeleteDC(hdc_mem)
+        gdi32.SelectObject(hdc_mem, old)
+        gdi32.DeleteObject(hbitmap)
+        gdi32.DeleteDC(hdc_mem)
         user32.ReleaseDC(None, hdc_screen)
 
     def close(self):
@@ -197,9 +204,10 @@ def main():
     last_non_default_at = time.time() * 1000
     prev_flow_gray = None
     start_time = time.time()
+    spin_cap = None
 
     try:
-        while True:
+        while window.hwnd:
             ok, frame = cap.read()
             if not ok:
                 break
@@ -227,11 +235,12 @@ def main():
                 if gesture != "default" and gesture not in app.VIDEO_GESTURES:
                     choices = memes.get(gesture, [])
                     if choices:
-                        previous = current_meme
-                        options = [m for m in choices if m is not previous] or choices
+                        options = [m for m in choices if m is not current_meme] or choices
                         current_meme = random.choice(options)
                 elif gesture == "spinCat":
-                    current_meme = None
+                    if spin_cap is None:
+                        spin_cap = cv2.VideoCapture(str(app.MEMES / app.GESTURE_MEMES["spinCat"][0]))
+                    spin_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
             if gesture != "default":
                 last_non_default_at = now
@@ -242,29 +251,25 @@ def main():
             if current_gesture == "default":
                 window.draw(np.zeros((WINDOW_H, WINDOW_W, 4), dtype=np.uint8))
             elif current_gesture == "spinCat":
-                # Stream the spin video as a normal opaque reaction frame.
-                if not hasattr(main, "spin_cap"):
-                    main.spin_cap = cv2.VideoCapture(str(app.MEMES / app.GESTURE_MEMES["spinCat"][0]))
-                ok_v, vframe = main.spin_cap.read()
-                if not ok_v:
-                    main.spin_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    ok_v, vframe = main.spin_cap.read()
+                ok_v, vframe = spin_cap.read() if spin_cap else (False, None)
+                if not ok_v and spin_cap:
+                    spin_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ok_v, vframe = spin_cap.read()
                 window.draw(contain_rgba(vframe, WINDOW_W, WINDOW_H))
             else:
                 window.draw(contain_rgba(current_meme, WINDOW_W, WINDOW_H))
 
-            # Keep processing Windows messages without creating a visible UI.
-            msg = wt.MSG()
-            while user32.PeekMessageW(ctypes.byref(msg), window.hwnd, 0, 0, 1):
+            msg = MSG()
+            while user32.PeekMessageW(ctypes.byref(msg), window.hwnd, 0, 0, PM_REMOVE):
                 user32.TranslateMessage(ctypes.byref(msg))
                 user32.DispatchMessageW(ctypes.byref(msg))
             time.sleep(max(0, 1 / FPS))
     finally:
         cap.release()
+        if spin_cap:
+            spin_cap.release()
         hand_landmarker.close()
         face_landmarker.close()
-        if hasattr(main, "spin_cap"):
-            main.spin_cap.release()
         window.close()
 
 
