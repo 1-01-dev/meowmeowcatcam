@@ -38,6 +38,7 @@ jobs:
             --name MeowMeowCatCam `
             --add-data "models;models" `
             --add-data "memes;memes" `
+            --collect-all mediapipe `
             desktop_stream.py
 
       - name: Build OBS transparent overlay EXE
@@ -47,6 +48,7 @@ jobs:
             --name MeowMeowCatCam-OBS `
             --add-data "models;models" `
             --add-data "memes;memes" `
+            --collect-all mediapipe `
             obs_overlay.py
 
       - name: Upload desktop EXE
