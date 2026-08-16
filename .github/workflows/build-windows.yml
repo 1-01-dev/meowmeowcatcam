@@ -31,7 +31,7 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pyinstaller
 
-      - name: Build EXE
+      - name: Build desktop EXE
         shell: pwsh
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed `
@@ -40,15 +40,33 @@ jobs:
             --add-data "memes;memes" `
             desktop_stream.py
 
-      - name: Upload EXE artifact
+      - name: Build OBS transparent overlay EXE
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed `
+            --name MeowMeowCatCam-OBS `
+            --add-data "models;models" `
+            --add-data "memes;memes" `
+            obs_overlay.py
+
+      - name: Upload desktop EXE
         uses: actions/upload-artifact@v5
         with:
           name: MeowMeowCatCam-Windows
           path: dist/MeowMeowCatCam.exe
           if-no-files-found: error
 
-      - name: Attach EXE to release
+      - name: Upload OBS overlay EXE
+        uses: actions/upload-artifact@v5
+        with:
+          name: MeowMeowCatCam-OBS-Windows
+          path: dist/MeowMeowCatCam-OBS.exe
+          if-no-files-found: error
+
+      - name: Attach EXEs to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/MeowMeowCatCam.exe
+          files: |
+            dist/MeowMeowCatCam.exe
+            dist/MeowMeowCatCam-OBS.exe
