@@ -29,6 +29,13 @@ user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 gdi32 = ctypes.windll.gdi32
 
+# Use ctypes primitives for Win32 handle/string types. Some ctypes.wintypes
+# aliases (HINSTANCE, HICON, HCURSOR, HBRUSH, LPCWSTR, LRESULT) are not
+# exposed consistently across Python versions.
+HANDLE = ctypes.c_void_p
+LRESULT = ctypes.c_ssize_t
+LPCWSTR = ctypes.c_wchar_p
+
 WS_POPUP = 0x80000000
 WS_EX_LAYERED = 0x00080000
 WS_EX_TRANSPARENT = 0x00000020
@@ -43,10 +50,6 @@ WM_DESTROY = 0x0002
 WM_KEYDOWN = 0x0100
 VK_ESCAPE = 0x1B
 PM_REMOVE = 0x0001
-
-# ctypes.wintypes does not expose LRESULT on all Python/Windows builds.
-# Windows LRESULT is a signed pointer-sized integer.
-LRESULT = ctypes.c_ssize_t
 
 
 class POINT(ctypes.Structure):
@@ -68,7 +71,7 @@ class BLENDFUNCTION(ctypes.Structure):
 
 class MSG(ctypes.Structure):
     _fields_ = [
-        ("hwnd", wt.HWND),
+        ("hwnd", HANDLE),
         ("message", wt.UINT),
         ("wParam", wt.WPARAM),
         ("lParam", wt.LPARAM),
@@ -77,7 +80,7 @@ class MSG(ctypes.Structure):
     ]
 
 
-WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM)
+WNDPROC = ctypes.WINFUNCTYPE(LRESULT, HANDLE, wt.UINT, wt.WPARAM, wt.LPARAM)
 
 
 class WNDCLASSW(ctypes.Structure):
@@ -86,12 +89,12 @@ class WNDCLASSW(ctypes.Structure):
         ("lpfnWndProc", WNDPROC),
         ("cbClsExtra", ctypes.c_int),
         ("cbWndExtra", ctypes.c_int),
-        ("hInstance", wt.HINSTANCE),
-        ("hIcon", wt.HICON),
-        ("hCursor", wt.HCURSOR),
-        ("hbrBackground", wt.HBRUSH),
-        ("lpszMenuName", wt.LPCWSTR),
-        ("lpszClassName", wt.LPCWSTR),
+        ("hInstance", HANDLE),
+        ("hIcon", HANDLE),
+        ("hCursor", HANDLE),
+        ("hbrBackground", HANDLE),
+        ("lpszMenuName", LPCWSTR),
+        ("lpszClassName", LPCWSTR),
     ]
 
 
@@ -112,10 +115,7 @@ class BITMAPINFOHEADER(ctypes.Structure):
 
 
 class BITMAPINFO(ctypes.Structure):
-    _fields_ = [
-        ("bmiHeader", BITMAPINFOHEADER),
-        ("bmiColors", wt.DWORD * 3),
-    ]
+    _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", wt.DWORD * 3)]
 
 
 def _wnd_proc(hwnd, msg, wparam, lparam):
@@ -144,18 +144,8 @@ class TransparentWindow:
 
         ex = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
         self.hwnd = user32.CreateWindowExW(
-            ex,
-            self.class_name,
-            "MeowMeowCatCam OBS Overlay",
-            WS_POPUP,
-            0,
-            0,
-            width,
-            height,
-            None,
-            None,
-            self.hinstance,
-            None,
+            ex, self.class_name, "MeowMeowCatCam OBS Overlay", WS_POPUP,
+            0, 0, width, height, None, None, self.hinstance, None
         )
         user32.ShowWindow(self.hwnd, SW_SHOWNOACTIVATE)
 
@@ -178,12 +168,7 @@ class TransparentWindow:
         bmi.biCompression = BI_RGB
         bits = ctypes.c_void_p()
         hbitmap = gdi32.CreateDIBSection(
-            hdc_mem,
-            ctypes.byref(bmi),
-            DIB_RGB_COLORS,
-            ctypes.byref(bits),
-            None,
-            0,
+            hdc_mem, ctypes.byref(bmi), DIB_RGB_COLORS, ctypes.byref(bits), None, 0
         )
         if not hbitmap or not bits.value:
             gdi32.DeleteDC(hdc_mem)
@@ -198,15 +183,8 @@ class TransparentWindow:
         size = SIZE(self.width, self.height)
         blend = BLENDFUNCTION(0, 0, 255, AC_SRC_ALPHA)
         user32.UpdateLayeredWindow(
-            self.hwnd,
-            hdc_screen,
-            ctypes.byref(pt_pos),
-            ctypes.byref(size),
-            hdc_mem,
-            ctypes.byref(pt_src),
-            0,
-            ctypes.byref(blend),
-            ULW_ALPHA,
+            self.hwnd, hdc_screen, ctypes.byref(pt_pos), ctypes.byref(size),
+            hdc_mem, ctypes.byref(pt_src), 0, ctypes.byref(blend), ULW_ALPHA
         )
 
         gdi32.SelectObject(hdc_mem, old)
@@ -240,18 +218,14 @@ def main():
 
     hand_landmarker = app.HandLandmarker.create_from_options(
         app.HandLandmarkerOptions(
-            base_options=app.BaseOptions(
-                model_asset_path=str(app.MODELS / "hand_landmarker.task")
-            ),
+            base_options=app.BaseOptions(model_asset_path=str(app.MODELS / "hand_landmarker.task")),
             running_mode=app.RunningMode.VIDEO,
             num_hands=2,
         )
     )
     face_landmarker = app.FaceLandmarker.create_from_options(
         app.FaceLandmarkerOptions(
-            base_options=app.BaseOptions(
-                model_asset_path=str(app.MODELS / "face_landmarker.task")
-            ),
+            base_options=app.BaseOptions(model_asset_path=str(app.MODELS / "face_landmarker.task")),
             running_mode=app.RunningMode.VIDEO,
             num_faces=1,
             output_facial_transformation_matrixes=True,
@@ -281,9 +255,7 @@ def main():
                 break
             frame = cv2.flip(frame, 1)
 
-            magnitude, coherence, prev_flow_gray = app.frame_flow_signal(
-                frame, prev_flow_gray
-            )
+            magnitude, coherence, prev_flow_gray = app.frame_flow_signal(frame, prev_flow_gray)
             state.update_flow(magnitude, coherence)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = app.Image(image_format=app.ImageFormat.SRGB, data=rgb)
@@ -309,9 +281,7 @@ def main():
                         current_meme = random.choice(options)
                 elif gesture == "spinCat":
                     if spin_cap is None:
-                        spin_cap = cv2.VideoCapture(
-                            str(app.MEMES / app.GESTURE_MEMES["spinCat"][0])
-                        )
+                        spin_cap = cv2.VideoCapture(str(app.MEMES / app.GESTURE_MEMES["spinCat"][0]))
                     spin_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
             if gesture != "default":
@@ -332,9 +302,7 @@ def main():
                 window.draw(contain_rgba(current_meme, WINDOW_W, WINDOW_H))
 
             msg = MSG()
-            while user32.PeekMessageW(
-                ctypes.byref(msg), window.hwnd, 0, 0, PM_REMOVE
-            ):
+            while user32.PeekMessageW(ctypes.byref(msg), window.hwnd, 0, 0, PM_REMOVE):
                 user32.TranslateMessage(ctypes.byref(msg))
                 user32.DispatchMessageW(ctypes.byref(msg))
             time.sleep(max(0, 1 / FPS))
